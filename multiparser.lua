@@ -36,8 +36,7 @@ void * multipart_parser_get_data(multipart_parser* p);
 local package = package.search("libmultipart")
 local parserLib = ffi.load(package)
 
-local function onHeaderName(self, buf, length)
-    local name = ffi.string(buf, length)
+local function onHeaderName(self, name)
     assert(name ~= nil, "A part's header name is empty")
 
     self.lastHeader = name:lower()
@@ -45,9 +44,8 @@ local function onHeaderName(self, buf, length)
     return 0
 end
 
-local function onHeaderValue(self, buf, length)
+local function onHeaderValue(self, value)
     if self.lastHeader ~= nil then
-        local value = ffi.string(buf, length)
         self.headers[self.lastHeader] = value
     end
 
@@ -63,11 +61,10 @@ end
 
 local finalizeFile
 
-local function onPartData(self, buf, length)
+local function onPartData(self, data)
     if self.key ~= nil then
         assert(self.value ~= nil, "self.value is not initialized")
-        local value = ffi.string(buf, length)
-        self.value = self.value .. value
+        self.value = self.value .. data
 
         return 0
     end
@@ -87,7 +84,7 @@ local function onPartData(self, buf, length)
 
             self.key = key
 
-            local value = ffi.string(buf, length)
+            local value = data
             self.value = value
 
             return 0
@@ -107,9 +104,9 @@ local function onPartData(self, buf, length)
 
         local tmpDir = self.cfg.tempDirectory
         if tmpDir ~= nil then
-            assert(tmpDir ~= (self.cfg.dir or ""),
+            assert(tmpDir ~= (self.cfg.directory or ""),
                 "Temporary and main files directory coincide")
-            local dirMode = self.cfg.dirMode or 755
+            local dirMode = self.cfg.directoryMode or 755
 
             local ok, err = fio.mktree(tmpDir, tonumber(dirMode, 8))
             if not ok then
@@ -133,8 +130,6 @@ local function onPartData(self, buf, length)
         self.file = file
     end
 
-    local data = ffi.string(buf, length)
-
     self.file:write(data)
 
     return 0
@@ -149,7 +144,7 @@ local function onPartEnd(self)
         assert(fullTempFileName ~= nil, "self.fullTempFileName is nil")
 
         local dir = self.cfg.directory or ""
-        local dirMode = self.cfg.dirMode or 755
+        local dirMode = self.cfg.directoryMode or 755
 
         local ok, err = fio.mktree(dir, tonumber(dirMode, 8))
         if not ok then
@@ -171,8 +166,14 @@ local function onPartEnd(self)
             error(err)
         end
 
+        local stat
+        stat, err = fio.stat(fullFileName)
+        if stat == nil then
+            error(err)
+        end
+
         if self.onFileProcessed ~= nil then
-            self:onFileProcessed(fileName)
+            self:onFileProcessed(fileName, stat.size)
         end
 
         self.fileName = nil
@@ -217,13 +218,15 @@ local function setWriteHandlers(self, handlers)
 
     if handlers.onHeaderName ~= nil then
         self.writeHandlers.on_header_field = ffi.cast("multipart_data_cb", function(_, buf, length)
-            return handlers.onHeaderName(self, buf, length)
+            local name = ffi.string(buf, length)
+            return handlers.onHeaderName(self, name)
         end)
     end
 
     if handlers.onHeaderValue ~= nil then
         self.writeHandlers.on_header_value = ffi.cast("multipart_data_cb", function(_, buf, length)
-            return handlers.onHeaderValue(self, buf, length)
+            local value = ffi.string(buf, length)
+            return handlers.onHeaderValue(self, value)
         end)
     end
 
@@ -235,7 +238,8 @@ local function setWriteHandlers(self, handlers)
 
     if handlers.onPartData ~= nil then
         self.writeHandlers.on_part_data = ffi.cast("multipart_data_cb", function(_, buf, length)
-            return handlers.onPartData(self, buf, length)
+            local data = ffi.string(buf, length)
+            return handlers.onPartData(self, data)
         end)
     end
 
@@ -268,15 +272,15 @@ local function step(self, buf)
     return parserLib.multipart_parser_execute(self.parser, buf, #buf)
 end
 
-local function run(self)
+local function run(self, ...)
     assert(self.onRead ~= nil,
         "Data reading callback is not specified, call parser:setReadHandler(...)")
 
     local bytesRead = 0
 
-    local ok, err = pcall(function()
+    local ok, err = pcall(function(...)
         while true do
-            local buf = self:onRead() or ""
+            local buf = self:onRead(...) or ""
 
             local count = self:step(buf)
             bytesRead = bytesRead + count
@@ -285,7 +289,7 @@ local function run(self)
                 break
             end
         end
-    end)
+    end, ...)
 
     self:free()
 
