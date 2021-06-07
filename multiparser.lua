@@ -155,6 +155,7 @@ local function onPartEnd(self)
         assert(fileName ~= nil, "self.fileName is nil")
 
         local fullFileName = fio.pathjoin(dir, fileName)
+        self.fullFileName = fullFileName
 
         ok, err = fio.copyfile(fullTempFileName, fullFileName)
         if not ok then
@@ -178,6 +179,7 @@ local function onPartEnd(self)
 
         self.fileName = nil
         self.fullTempFileName = nil
+        self.fullFileName = nil
     else
         assert(self.key ~= nil, "self.key is nil")
         assert(self.value ~= nil, "self.value is nil")
