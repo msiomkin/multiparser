@@ -90,6 +90,8 @@ local function onPartData(self, data)
             return 0
         end
 
+        self.origFileName = fileName
+
         if self.onFileName ~= nil then
             fileName = self:onFileName(fileName)
         end
