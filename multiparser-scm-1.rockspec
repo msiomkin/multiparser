@@ -3,7 +3,7 @@ package = "multiparser"
 version = "scm-1"
 
 source = {
-    url = "git://github.com/msiomkin/multiparser.git",
+    url = "git+https://github.com/msiomkin/multiparser.git",
     branch = "master"
 }
 
